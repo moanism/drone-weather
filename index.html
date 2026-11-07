@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Avata 2 flight weather</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Orbit propagation for the visible-satellites estimate (UMD build, global `satellite`) -->
+<script src="https://cdn.jsdelivr.net/npm/satellite.js@4.1.4/dist/satellite.min.js"></script>
+<style>
+:root{
+  --bg:#EEF2F5; --surface:#FFFFFF; --ink:#16232E; --muted:#5A6873; --line:#D3DBE1; --accent:#1F5F8B;
+  --go-bg:#D5EEDD; --go-ink:#155C38; --go-dot:#2E9A5F;
+  --warn-bg:#FBE8BF; --warn-ink:#7A4E00; --warn-dot:#D99A00;
+  --stop-bg:#F6D3D7; --stop-ink:#8E1E2D; --stop-dot:#D1495B;
+  --info-bg:#E3E9EE; --info-ink:#3C4A55; --info-dot:#8A97A1;
+  color-scheme: light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121D26; --surface:#1A2732; --ink:#E4ECF1; --muted:#9AA9B4; --line:#2A3A47; --accent:#7DB7E0;
+    --go-bg:#16392A; --go-ink:#9BE3B9; --go-dot:#3DBB76;
+    --warn-bg:#3B2E10; --warn-ink:#F3CF77; --warn-dot:#E5A91A;
+    --stop-bg:#44181F; --stop-ink:#F6A9B3; --stop-dot:#E25D6F;
+    --info-bg:#22303B; --info-ink:#B4C1CB; --info-dot:#6F7D88;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121D26; --surface:#1A2732; --ink:#E4ECF1; --muted:#9AA9B4; --line:#2A3A47; --accent:#7DB7E0;
+  --go-bg:#16392A; --go-ink:#9BE3B9; --go-dot:#3DBB76;
+  --warn-bg:#3B2E10; --warn-ink:#F3CF77; --warn-dot:#E5A91A;
+  --stop-bg:#44181F; --stop-ink:#F6A9B3; --stop-dot:#E25D6F;
+  --info-bg:#22303B; --info-ink:#B4C1CB; --info-dot:#6F7D88;
+  color-scheme: dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.45}
+.app{max-width:1100px;margin:0 auto;padding:20px 16px 48px}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+header.top{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:end;justify-content:space-between;margin-bottom:18px}
+.brand h1{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-size:1.6rem;line-height:1.1;margin:0}
+.brand p{margin:2px 0 0;color:var(--muted);font-size:.92rem}
+.where{display:flex;gap:8px;flex-wrap:wrap;position:relative;flex:1 1 320px;max-width:520px}
+.where input{flex:1 1 180px;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.btn{padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-weight:500;white-space:nowrap}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.results{position:absolute;top:100%;left:0;right:0;margin-top:6px;background:var(--surface);border:1px solid var(--line);border-radius:10px;list-style:none;padding:4px;z-index:5;max-height:260px;overflow:auto}
+.results button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:8px;cursor:pointer}
+.results button:hover{background:var(--info-bg)}
+.results small{color:var(--muted)}
+
+.notice{border:1px solid var(--warn-dot);background:var(--warn-bg);color:var(--warn-ink);padding:10px 14px;border-radius:10px;margin-bottom:16px;font-size:.95rem}
+.status{color:var(--muted);font-size:.92rem;min-height:1.4em;margin:0 0 10px}
+
+.hero{border-radius:20px;padding:22px 24px;display:grid;grid-template-columns:auto 1fr;gap:6px 28px;align-items:center;margin-bottom:14px;transition:background .25s}
+.hero .verdict{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:700;font-size:clamp(3.2rem,11vw,6rem);line-height:.9;letter-spacing:-.01em}
+.hero .when{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:1.35rem;font-weight:600;margin:0}
+.hero .why{margin:4px 0 0;max-width:60ch}
+.hero .next{margin:6px 0 0;font-size:.95rem;opacity:.85}
+@media (max-width:560px){.hero{grid-template-columns:1fr}}
+
+.ribbon-wrap{margin:0 0 22px}
+.ribbon-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;font-size:.88rem;color:var(--muted)}
+.ribbon{display:flex;gap:3px;overflow-x:auto;padding:4px 2px 8px;scrollbar-width:thin}
+.hr{flex:0 0 34px;border:0;background:none;padding:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;position:relative}
+.hr .bar{width:100%;height:38px;border-radius:7px;background:var(--info-dot)}
+.hr.go .bar{background:var(--go-dot)} .hr.warn .bar{background:var(--warn-dot)} .hr.stop .bar{background:var(--stop-dot)}
+.hr .lab{font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.hr .day{position:absolute;top:-2px;left:3px;font-size:.66rem;font-weight:600;color:#fff;opacity:.95}
+.hr.newday{margin-left:8px}
+.hr[aria-pressed="true"] .bar{outline:3px solid var(--ink);outline-offset:2px}
+.hr[aria-pressed="true"] .lab{color:var(--ink);font-weight:600}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.card{border-radius:16px;padding:16px 16px 14px;display:flex;flex-direction:column;gap:4px;background:var(--info-bg);color:var(--info-ink);transition:background .25s}
+.t-go{background:var(--go-bg);color:var(--go-ink)}
+.t-warn{background:var(--warn-bg);color:var(--warn-ink)}
+.t-stop{background:var(--stop-bg);color:var(--stop-ink)}
+.t-info{background:var(--info-bg);color:var(--info-ink)}
+.card-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.card h3{margin:0;font-size:1rem;font-weight:600}
+.pill{font-size:.78rem;font-weight:600;padding:2px 9px;border-radius:999px;border:1.5px solid currentColor;white-space:nowrap}
+.value{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-size:2.6rem;line-height:1.05;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:10px}
+.value .unit{font-size:1.1rem;font-weight:500;margin-left:-4px;align-self:flex-end;padding-bottom:6px}
+.arrow{width:46px;height:46px;flex:0 0 auto}
+.sub{margin:0;font-size:.95rem}
+.rule{margin:6px 0 0;font-size:.82rem;opacity:.8;border-top:1px solid currentColor;border-top-color:color-mix(in srgb,currentColor 25%,transparent);padding-top:6px}
+.raw{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.75rem;opacity:.8;word-break:break-word;margin:2px 0 0}
+
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:16px;padding:28px;text-align:center;color:var(--muted)}
+.empty .btn{margin-top:10px}
+footer{margin-top:28px;font-size:.84rem;color:var(--muted);max-width:75ch}
+footer p{margin:0 0 6px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Avata 2 flight weather</h1>
+      <p>Hour-by-hour go/no-go, checked against the DJI Avata 2’s limits</p>
+    </div>
+    <form class="where" id="searchForm" autocomplete="off">
+      <input id="q" type="search" placeholder="Search a place" aria-label="Search a place">
+      <button class="btn" type="submit">Search</button>
+      <button class="btn" type="button" id="geoBtn">Use my location</button>
+      <ul class="results" id="results" hidden></ul>
+    </form>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+  <p class="status" id="status" role="status"></p>
+  <main id="main">
+    <div class="empty">
+      <p>Search for your flying spot or use your location to see the forecast.</p>
+      <button class="btn" type="button" id="demoBtn">Show sample data</button>
+    </div>
+  </main>
+
+  <footer>
+    <p>Limits used: max wind resistance 10.7 m/s (Level 5), operating temperature −10 to 40 °C, Normal-mode top speed 8 m/s, GPS + Galileo + BeiDou. The Avata 2 has no water resistance. Thresholds live in one <code>LIMITS</code> object if you want to tune them.</p>
+    <p>Data: Open-Meteo (forecast, place search), aviationweather.gov (METAR), NOAA SWPC (Kp), CelesTrak (satellite orbits). Low cloud base is estimated from the temperature–dew point spread. This is a planning aid, not a substitute for your own judgment or local drone rules.</p>
+  </footer>
+</div>
+
+<script>
+/* =========================================================================
+   1. CONFIG — thresholds derived from DJI Avata 2 specs & manual guidance
+   ========================================================================= */
+const LIMITS = {
+  wind:   { go: 5.4, normalMode: 8.0, max: 10.7 },          // m/s, at 10 m or 120 m (worse of the two)
+  gust:   { go: 8.0, max: 10.7, spread: 5 },                // m/s; spread = gust minus mean wind
+  temp:   { min: -10, max: 40, coldWarn: 5, hotWarn: 35 },  // °C; 5 °C = bottom of battery charging range
+  precip: { mm: 0.1, probWarn: 30, probStop: 60 },          // mm/h, %
+  cloud:  { baseStop: 150, baseWarn: 500, lowCoverSig: 25, visStop: 1000, visWarn: 3000, rhWarn: 95 },
+  gnss:   { go: 15, warn: 10, kpWarn: 5, kpStop: 7, minElevDeg: 10 },
+  daylight: { twilightMin: 30 },
+};
+const HOURS_AHEAD = 48;
+const STORE_KEY = 'avata2-wx-location';
+
+const TONE_LABEL = { go: 'Go', warn: 'Caution', stop: 'No-fly', info: 'Info' };
+const RANK = { info: 0, go: 0, warn: 1, stop: 2 };
+const VERDICT = { go: 'Go', warn: 'Caution', stop: 'Don’t fly' };
+
+/* =========================================================================
+   2. HELPERS
+   ========================================================================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = (n, d = 1) => (n == null || isNaN(n)) ? '–' : Number(n).toFixed(d);
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+const compass = d => COMPASS[Math.round(((d % 360) + 360) % 360 / 22.5) % 16];
+
+// Open-Meteo returns local wall-clock strings ("2026-11-07T14:00"); treat them as naive UTC for arithmetic.
+function parseLocal(s) {
+  const [d, t = '00:00'] = s.split('T');
+  const [Y, M, D] = d.split('-').map(Number);
+  const [h, m] = t.split(':').map(Number);
+  return Date.UTC(Y, M - 1, D, h, m);
+}
+const hhmm = s => s.slice(11, 16);
+const dayOf = s => DAYS[new Date(parseLocal(s)).getUTCDay()];
+function fmtDur(ms) {
+  const m = Math.max(0, Math.round(ms / 60000));
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+}
+function haversineKm(a, b, c, d) {
+  const r = Math.PI / 180, dLat = (c - a) * r, dLon = (d - b) * r;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+const worst = tones => tones.reduce((w, t) => RANK[t] > RANK[w] ? t : w, 'go');
+
+async function getJSON(url, ms = 12000) {
+  const c = new AbortController(); const timer = setTimeout(() => c.abort(), ms);
+  try { const r = await fetch(url, { signal: c.signal }); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.json(); }
+  finally { clearTimeout(timer); }
+}
+async function getText(url, ms = 12000) {
+  const c = new AbortController(); const timer = setTimeout(() => c.abort(), ms);
+  try { const r = await fetch(url, { signal: c.signal }); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.text(); }
+  finally { clearTimeout(timer); }
+}
+
+/* =========================================================================
+   3. DATA SOURCES
+   ========================================================================= */
+function fetchForecast(lat, lon) {
+  const hourly = ['temperature_2m','dew_point_2m','relative_humidity_2m','precipitation','precipitation_probability',
+    'weather_code','cloud_cover_low','visibility','wind_speed_10m','wind_speed_120m','wind_direction_10m',
+    'wind_direction_120m','wind_gusts_10m'].join(',');
+  return getJSON(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=${hourly}` +
+    `&daily=sunrise,sunset&wind_speed_unit=ms&timezone=auto&forecast_days=3`);
+}
+
+function geocode(name) {
+  return getJSON(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=6&language=en&format=json`);
+}
+
+// Nearest METAR station; widens the box once if nothing is close.
+async function fetchMetar(lat, lon) {
+  for (const span of [1, 3]) {
+    const bbox = [lat - span, lon - span, lat + span, lon + span].map(v => v.toFixed(2)).join(',');
+    const list = await getJSON(`https://aviationweather.gov/api/data/metar?bbox=${bbox}&format=json`);
+    if (Array.isArray(list) && list.length) {
+      const best = list.map(m => ({ ...m, distKm: haversineKm(lat, lon, m.lat, m.lon) }))
+                       .sort((a, b) => a.distKm - b.distKm)[0];
+      best.cat = best.fltCat || metarCategory(best);
+      return best;
+    }
+  }
+  return null;
+}
+
+// NOAA planetary K-index forecast (3-hour blocks, UTC). Handles array-of-arrays or array-of-objects.
+async function fetchKp() {
+  const rows = await getJSON('https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json');
+  return rows.map(r => Array.isArray(r) ? { time: r[0], kp: parseFloat(r[1]) } : { time: r.time_tag, kp: parseFloat(r.kp) })
+             .filter(r => !isNaN(r.kp))
+             .map(r => ({ t: Date.parse(r.time.replace(' ', 'T') + (r.time.endsWith('Z') ? '' : 'Z')), kp: r.kp }));
+}
+
+// Orbital elements for the three constellations the Avata 2 uses.
+async function fetchTles() {
+  if (typeof satellite === 'undefined') throw new Error('orbit library not loaded');
+  const groups = { gps: 'gps-ops', gal: 'galileo', bds: 'beidou' };
+  const out = {};
+  await Promise.all(Object.entries(groups).map(async ([k, g]) => {
+    const txt = await getText(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${g}&FORMAT=tle`);
+    const lines = txt.split(/\r?\n/).map(l => l.trim());
+    out[k] = [];
+    for (let i = 0; i < lines.length - 1; i++) {
+      if (lines[i].startsWith('1 ') && lines[i + 1].startsWith('2 ')) {
+        try { out[k].push(satellite.twoline2satrec(lines[i], lines[i + 1])); } catch (e) {}
+        i++;
+      }
+    }
+  }));
+  return out;
+}
+
+function countVisible(sets, lat, lon, instant) {
+  const date = new Date(instant), gmst = satellite.gstime(date);
+  const obs = { latitude: lat * Math.PI / 180, longitude: lon * Math.PI / 180, height: 0 };
+  const minEl = LIMITS.gnss.minElevDeg * Math.PI / 180;
+  const res = { total: 0 };
+  for (const [k, list] of Object.entries(sets)) {
+    let n = 0;
+    for (const s of list) {
+      const pv = satellite.propagate(s, date);
+      if (!pv || !pv.position) continue;
+      const look = satellite.ecfToLookAngles(obs, satellite.eciToEcf(pv.position, gmst));
+      if (look.elevation >= minEl) n++;
+    }
+    res[k] = n; res.total += n;
+  }
+  return res;
+}
+
+/* =========================================================================
+   4. FLIGHT CATEGORY (VFR / MVFR / IFR / LIFR)
+   ========================================================================= */
+function categoryFrom(ceilFt, visSm) {
+  if (ceilFt < 500 || visSm < 1) return 'LIFR';
+  if (ceilFt < 1000 || visSm < 3) return 'IFR';
+  if (ceilFt <= 3000 || visSm <= 5) return 'MVFR';
+  return 'VFR';
+}
+function metarCategory(m) {
+  const vis = typeof m.visib === 'string' ? parseFloat(m.visib) : (m.visib ?? 10);
+  const ceil = (m.clouds || []).filter(c => ['BKN','OVC','OVX'].includes(c.cover) && c.base != null)
+                               .reduce((a, c) => Math.min(a, c.base), Infinity);
+  return categoryFrom(ceil, isNaN(vis) ? 10 : vis);
+}
+const CAT_TONE = { VFR: 'go', MVFR: 'warn', IFR: 'stop', LIFR: 'stop' };
+const CAT_TEXT = {
+  VFR: 'Visual conditions: good visibility, high or no ceiling',
+  MVFR: 'Marginal VFR: lower ceiling or reduced visibility',
+  IFR: 'Instrument conditions: low cloud or poor visibility',
+  LIFR: 'Low IFR: very low cloud or fog',
+};
+
+/* =========================================================================
+   5. EVALUATORS — one per card, pure functions of an hour record
+   ========================================================================= */
+const THUNDER = [95, 96, 99];
+const WET = [51,53,55,56,57,61,63,65,66,67,71,73,75,77,80,81,82,85,86];
+const FOG = [45, 48];
+const lowCloudBase = h => Math.max(0, 125 * (h.t - h.td)); // metres AGL, spread rule of thumb
+
+function evalWind(h) {
+  const L = LIMITS.wind, w = Math.max(h.w10, h.w120 ?? 0);
+  let tone, sub;
+  if (w >= L.max) { tone = 'stop'; sub = 'Above the 10.7 m/s the Avata 2 is rated for'; }
+  else if (w >= L.normalMode) { tone = 'warn'; sub = 'Faster than Normal-mode top speed: fly Sport or Manual to make headway home'; }
+  else if (w >= L.go) { tone = 'warn'; sub = 'Over half the rated limit; expect drift and shorter battery life'; }
+  else { tone = 'go'; sub = 'Well within the Avata 2’s wind rating'; }
+  return { key: 'wind', title: 'Wind speed', tone, value: fmt(w), unit: 'm/s',
+    sub, rule: `10 m: ${fmt(h.w10)} m/s, 120 m: ${fmt(h.w120)} m/s (${fmt(w * 3.6, 0)} km/h worst)` };
+}
+
+function evalGust(h) {
+  const L = LIMITS.gust, g = h.g10, spread = g - h.w10;
+  let tone = g >= L.max ? 'stop' : g >= L.go ? 'warn' : 'go';
+  let sub = g >= L.max ? 'Gusts exceed the 10.7 m/s rating' : g >= L.go ? 'Strong gusts close to the rated limit' : 'Gusts are manageable';
+  if (tone === 'go' && spread >= L.spread) { tone = 'warn'; sub = `Gusty: ${fmt(spread)} m/s above the mean wind, expect turbulence`; }
+  return { key: 'gust', title: 'Gusts', tone, value: fmt(g), unit: 'm/s', sub, rule: `Limit 10.7 m/s, caution from ${L.go} m/s or a ${L.spread} m/s gust spread` };
+}
+
+function evalDirection(h) {
+  const d = h.d10, d120 = h.d120 ?? d;
+  const shear = Math.abs(((d120 - d + 540) % 360) - 180);
+  const tone = (shear > 45 && (h.w120 ?? 0) >= 5) ? 'warn' : 'info';
+  return { key: 'dir', title: 'Wind direction', tone, value: compass(d), unit: `${Math.round(d)}°`,
+    extra: arrowSVG(d),
+    sub: tone === 'warn' ? `Wind veers ${Math.round(shear)}° between 10 m and 120 m` : `Drifts toward ${compass(d + 180)}. Start your run upwind so you return with a tailwind`,
+    rule: `At 120 m: from ${compass(d120)} (${Math.round(d120)}°)` };
+}
+
+function evalPrecip(h) {
+  const L = LIMITS.precip;
+  let tone = 'go', sub = 'Dry';
+  if (THUNDER.includes(h.wc)) { tone = 'stop'; sub = 'Thunderstorms'; }
+  else if (h.pr >= L.mm || WET.includes(h.wc)) { tone = 'stop'; sub = 'Rain or snow: the Avata 2 isn’t water-resistant'; }
+  else if (h.pp >= L.probStop) { tone = 'stop'; sub = 'Rain likely'; }
+  else if (h.pp >= L.probWarn) { tone = 'warn'; sub = 'Showers possible; keep an eye on the sky'; }
+  return { key: 'precip', title: 'Precipitation', tone, value: fmt(h.pr), unit: 'mm',
+    sub, rule: `${Math.round(h.pp ?? 0)}% chance this hour. Avata 2 has no IP rating` };
+}
+
+function evalTemp(h) {
+  const L = LIMITS.temp, t = h.t;
+  let tone = 'go', sub = 'Comfortable for the battery';
+  if (t < L.min || t > L.max) { tone = 'stop'; sub = 'Outside the −10 to 40 °C operating range'; }
+  else if (t < L.coldWarn) { tone = 'warn'; sub = 'Cold: keep batteries warm, expect voltage sag and shorter flights'; }
+  else if (t > L.hotWarn) { tone = 'warn'; sub = 'Hot: let packs cool between flights'; }
+  if (t <= 2 && h.rh >= 90 && tone !== 'stop') { tone = 'warn'; sub = 'Near freezing and humid: ice can form on props'; }
+  return { key: 'temp', title: 'Temperature', tone, value: fmt(t, 0), unit: '°C', sub, rule: 'Operating range −10 to 40 °C, charging 5 to 40 °C' };
+}
+
+function evalCloud(h) {
+  const L = LIMITS.cloud, base = lowCloudBase(h), visKm = h.vis / 1000;
+  const lowCloud = h.low >= L.lowCoverSig;
+  let tone = 'go', sub, value, unit = 'm';
+  if (lowCloud && base < 500) { value = fmt(base, 0); } else { value = 'Clear'; unit = ''; }
+  sub = lowCloud ? `${Math.round(h.low)}% low cloud, estimated base ${fmt(base, 0)} m` : 'No significant cloud below 500 m';
+  if (FOG.includes(h.wc) || h.vis < L.visStop) { tone = 'stop'; sub = `Fog or poor visibility (${fmt(visKm)} km)`; }
+  else if (lowCloud && base < L.baseStop) { tone = 'stop'; sub = `Cloud base around ${fmt(base, 0)} m, inside your flight altitude`; }
+  else if ((lowCloud && base < L.baseWarn) || h.vis < L.visWarn || h.rh >= L.rhWarn) {
+    tone = 'warn'; if (h.rh >= L.rhWarn && !(lowCloud && base < L.baseWarn)) sub = `Very humid (${Math.round(h.rh)}%): mist and lens fogging likely`;
+  }
+  return { key: 'cloud', title: 'Cloud below 500 m', tone, value, unit, sub, rule: `Visibility ${fmt(visKm)} km. Don’t fly in fog or cloud` };
+}
+
+function evalSats(h) {
+  const L = LIMITS.gnss, s = h.sats, kp = h.kp;
+  if (!s && kp == null) return { key: 'sats', title: 'Visible satellites', tone: 'info', value: '–', sub: 'Satellite data unavailable', rule: 'GPS + Galileo + BeiDou' };
+  const tones = [];
+  if (s) tones.push(s.total < L.warn ? 'stop' : s.total < L.go ? 'warn' : 'go');
+  if (kp != null) tones.push(kp >= L.kpStop ? 'stop' : kp >= L.kpWarn ? 'warn' : 'go');
+  const tone = worst(tones);
+  let sub = s ? `GPS ${s.gps}, Galileo ${s.gal}, BeiDou ${s.bds} above ${L.minElevDeg}° in open sky` : 'Count unavailable; Kp only';
+  if (kp != null && kp >= L.kpWarn) sub += `. Geomagnetic storm (Kp ${fmt(kp)}) can weaken GNSS lock and RTH accuracy`;
+  return { key: 'sats', title: 'Visible satellites', tone, value: s ? String(s.total) : '–', unit: s ? 'sats' : '',
+    sub, rule: `Kp index ${kp != null ? fmt(kp) : '–'} (caution ${L.kpWarn}+). Trees and buildings reduce what the drone sees` };
+}
+
+function evalDaylight(h) {
+  const t = h.local, sr = parseLocal(h.sunrise), ss = parseLocal(h.sunset), tw = LIMITS.daylight.twilightMin * 60000;
+  let tone, sub;
+  if (t >= sr && t <= ss - tw) { tone = 'go'; sub = `${fmtDur(ss - t)} of daylight left`; }
+  else if (t > ss - tw && t <= ss) { tone = 'warn'; sub = 'Sunset soon: land with light to spare'; }
+  else if ((t > ss && t <= ss + tw) || (t >= sr - tw && t < sr)) { tone = 'warn'; sub = 'Civil twilight: many countries require an anti-collision light'; }
+  else { tone = 'stop'; sub = 'Dark: vision positioning degrades and line of sight is hard'; }
+  return { key: 'sun', title: 'Sunrise & sunset', tone, value: `${hhmm(h.sunrise)}–${hhmm(h.sunset)}`, unit: '',
+    sub, rule: 'Downward vision positioning needs good light' };
+}
+
+function evalAirport(h) {
+  const m = state.metar, near = Math.abs(h.instant - Date.now()) <= 2 * 3600e3;
+  const ceilFt = h.low >= 50 ? lowCloudBase(h) * 3.281 : Infinity;
+  const est = categoryFrom(ceilFt, h.vis / 1609.34);
+  if (!m) return { key: 'apt', title: 'Airport flight rules', tone: CAT_TONE[est], value: est, unit: 'est.',
+    sub: `${CAT_TEXT[est]}. No METAR station found nearby, estimated from the forecast`, rule: 'Estimate uses forecast low cloud and visibility' };
+  const cat = near ? m.cat : est;
+  return { key: 'apt', title: 'Airport flight rules', tone: CAT_TONE[cat] || 'info', value: cat || '–', unit: near ? '' : 'est.',
+    sub: `${esc(m.icaoId)} ${esc(m.name || '')}, ${fmt(m.distKm, 0)} km away. ${near ? 'Current report' : `Now ${m.cat}; forecast estimate for this hour`}`,
+    rule: `${CAT_TEXT[cat] || ''}`, extra: m.rawOb ? `<p class="raw">${esc(m.rawOb)}</p>` : '' };
+}
+
+const EVALUATORS = [evalWind, evalGust, evalDirection, evalPrecip, evalTemp, evalCloud, evalSats, evalDaylight, evalAirport];
+const evaluate = h => EVALUATORS.map(f => f(h));
+const verdictOf = cards => worst(cards.filter(c => c.tone !== 'info').map(c => c.tone));
+
+function arrowSVG(fromDeg) {
+  return `<svg class="arrow" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" stroke-opacity=".35"/>
+  <g transform="rotate(${(fromDeg + 180) % 360} 20 20)"><path d="M20 5 L27 20 L20 16.5 L13 20 Z" fill="currentColor"/><line x1="20" y1="17" x2="20" y2="33" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></g></svg>`;
+}
+
+/* =========================================================================
+   6. MODEL — build the next 48 hours
+   ========================================================================= */
+const state = { loc: null, hours: [], sel: 0, metar: null, demo: false };
+
+function buildHours(fc, extras) {
+  const off = (fc.utc_offset_seconds || 0) * 1000, H = fc.hourly, D = fc.daily;
+  const sun = {}; D.time.forEach((d, i) => sun[d] = { sr: D.sunrise[i], ss: D.sunset[i] });
+  const hours = [];
+  for (let i = 0; i < H.time.length && hours.length < HOURS_AHEAD; i++) {
+    const local = parseLocal(H.time[i]), instant = local - off;
+    if (instant + 3600e3 <= Date.now()) continue;
+    const day = sun[H.time[i].slice(0, 10)] || sun[D.time[D.time.length - 1]];
+    hours.push({
+      time: H.time[i], local, instant, sunrise: day.sr, sunset: day.ss,
+      t: H.temperature_2m[i], td: H.dew_point_2m[i], rh: H.relative_humidity_2m[i],
+      pr: H.precipitation[i], pp: H.precipitation_probability?.[i] ?? 0, wc: H.weather_code[i],
+      low: H.cloud_cover_low[i], vis: H.visibility?.[i] ?? 20000,
+      w10: H.wind_speed_10m[i], w120: H.wind_speed_120m?.[i], d10: H.wind_direction_10m[i],
+      d120: H.wind_direction_120m?.[i], g10: H.wind_gusts_10m[i],
+    });
+  }
+  for (const h of hours) {
+    if (extras.kp?.length) { const row = extras.kp.filter(r => r.t <= h.instant).pop() || extras.kp[0]; h.kp = row.kp; }
+    else h.kp = extras.kpFn ? extras.kpFn(h) : null;
+    if (extras.tles) { try { h.sats = countVisible(extras.tles, state.loc.lat, state.loc.lon, h.instant); } catch (e) { h.sats = null; } }
+    else h.sats = extras.satsFn ? extras.satsFn(h) : null;
+    h.cards = null;
+  }
+  return hours;
+}
+
+/* =========================================================================
+   7. RENDER
+   ========================================================================= */
+function render() {
+  const hours = state.hours;
+  if (!hours.length) return;
+  hours.forEach(h => { h.cards = evaluate(h); h.verdict = verdictOf(h.cards); });
+  const h = hours[state.sel], v = h.verdict;
+  const stops = h.cards.filter(c => c.tone === 'stop').map(c => c.title);
+  const warns = h.cards.filter(c => c.tone === 'warn').map(c => c.title);
+  const why = v === 'go' ? 'Every check is within the Avata 2’s limits.'
+    : [stops.length && `Limiting: ${stops.join(', ')}.`, warns.length && `Watch: ${warns.join(', ')}.`].filter(Boolean).join(' ');
+
+  $('#main').innerHTML = `
+    <section class="hero t-${v}" aria-live="polite">
+      <div class="verdict">${VERDICT[v]}</div>
+      <div>
+        <p class="when">${dayOf(h.time)} ${hhmm(h.time)} at ${esc(state.loc.name)}${state.demo ? ' (sample data)' : ''}</p>
+        <p class="why">${esc(why)}</p>
+        <p class="next">${esc(nextWindow())}</p>
+      </div>
+    </section>
+    <section class="ribbon-wrap" aria-label="Next 48 hours">
+      <div class="ribbon-head"><span>Next 48 hours, tap an hour</span><span>${legend()}</span></div>
+      <div class="ribbon" id="ribbon">${hours.map((x, i) => {
+        const newDay = i > 0 && x.time.slice(0, 10) !== hours[i - 1].time.slice(0, 10);
+        return `<button class="hr ${x.verdict}${newDay ? ' newday' : ''}" data-i="${i}" aria-pressed="${i === state.sel}"
+          aria-label="${dayOf(x.time)} ${hhmm(x.time)}: ${TONE_LABEL[x.verdict]}">
+          ${(i === 0 || newDay) ? `<span class="day">${dayOf(x.time)}</span>` : ''}<span class="bar"></span><span class="lab">${hhmm(x.time).slice(0, 2)}</span></button>`;
+      }).join('')}</div>
+    </section>
+    <section class="grid">${h.cards.map(cardHTML).join('')}</section>`;
+
+  $('#ribbon').addEventListener('click', e => {
+    const b = e.target.closest('.hr'); if (!b) return;
+    state.sel = +b.dataset.i; const x = $('#ribbon').scrollLeft; render(); $('#ribbon').scrollLeft = x;
+  });
+}
+
+function cardHTML(c) {
+  return `<article class="card t-${c.tone}">
+    <div class="card-top"><h3>${c.title}</h3><span class="pill">${TONE_LABEL[c.tone]}</span></div>
+    <div class="value">${c.extra && c.key === 'dir' ? c.extra : ''}<span>${c.value}</span>${c.unit ? `<span class="unit">${c.unit}</span>` : ''}</div>
+    <p class="sub">${c.sub || ''}</p>
+    ${c.extra && c.key !== 'dir' ? c.extra : ''}
+    ${c.rule ? `<p class="rule">${c.rule}</p>` : ''}
+  </article>`;
+}
+
+function legend() { return 'Green go, amber caution, red no-fly'; }
+
+function nextWindow() {
+  const hs = state.hours, from = state.sel;
+  if (hs[from].verdict === 'go') {
+    let j = from; while (j + 1 < hs.length && hs[j + 1].verdict === 'go') j++;
+    return j === hs.length - 1 ? 'Good for the rest of the forecast.' : `Good until ${dayOf(hs[j + 1].time)} ${hhmm(hs[j + 1].time)}.`;
+  }
+  const s = hs.findIndex((x, i) => i > from && x.verdict === 'go');
+  if (s < 0) return 'No fully green hour in the next 48 hours.';
+  let e = s; while (e + 1 < hs.length && hs[e + 1].verdict === 'go') e++;
+  return `Next go window: ${dayOf(hs[s].time)} ${hhmm(hs[s].time)}–${hhmm(hs[e].time).slice(0, 2)}:59.`;
+}
+
+/* =========================================================================
+   8. FLOW — load live data, fall back to sample data
+   ========================================================================= */
+const setStatus = t => $('#status').textContent = t;
+function showNotice(t) { const n = $('#notice'); n.hidden = !t; n.textContent = t || ''; }
+
+async function load(loc) {
+  state.loc = loc; state.sel = 0;
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(loc)); } catch (e) {}
+  setStatus(`Loading forecast for ${loc.name}…`);
+  let fc;
+  try { fc = await fetchForecast(loc.lat, loc.lon); }
+  catch (e) { return startDemo(loc, true); }
+  showNotice('');
+  const [metar, kp, tles] = await Promise.allSettled([fetchMetar(loc.lat, loc.lon), fetchKp(), fetchTles()]);
+  state.metar = metar.status === 'fulfilled' ? metar.value : null;
+  state.demo = false;
+  state.hours = buildHours(fc, { kp: kp.status === 'fulfilled' ? kp.value : null, tles: tles.status === 'fulfilled' ? tles.value : null });
+  const missing = [metar.status === 'rejected' && 'airport report', kp.status === 'rejected' && 'Kp index', tles.status === 'rejected' && 'satellite orbits'].filter(Boolean);
+  setStatus(`Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${missing.length ? `. Couldn’t load: ${missing.join(', ')}` : ''}`);
+  render();
+}
+
+function startDemo(loc, blocked) {
+  state.loc = loc || { name: 'Sample field', lat: 47.0, lon: 8.0 };
+  state.demo = true; state.sel = 0;
+  if (blocked) showNotice('Live weather couldn’t load here because this viewer blocks outside data. Showing sample data so you can see how it works. Hosted as a regular web page, it pulls live forecasts.');
+  state.metar = { icaoId: 'XMPL', name: 'Sample airfield', distKm: 11, cat: 'VFR', rawOb: 'XMPL 071350Z 24008KT 9999 SCT035 12/06 Q1016' };
+  const fc = makeDemoForecast();
+  state.hours = buildHours(fc, {
+    kpFn: h => 2 + 3.2 * Math.max(0, Math.sin((h.local / 3600e3) / 9)),
+    satsFn: h => { const p = (h.local / 3600e3); const gps = 8 + Math.round(2 * Math.sin(p / 3)), gal = 7 + Math.round(2 * Math.cos(p / 4)), bds = 11 + Math.round(3 * Math.sin(p / 5)); return { gps, gal, bds, total: gps + gal + bds }; },
+  });
+  setStatus('Sample data');
+  render();
+}
+
+function makeDemoForecast() {
+  const now = new Date(), off = -now.getTimezoneOffset() * 60;
+  const base = new Date(now.getTime() + off * 1000); base.setUTCHours(0, 0, 0, 0);
+  const iso = ms => new Date(ms).toISOString().slice(0, 16);
+  const H = { time: [], temperature_2m: [], dew_point_2m: [], relative_humidity_2m: [], precipitation: [], precipitation_probability: [],
+    weather_code: [], cloud_cover_low: [], visibility: [], wind_speed_10m: [], wind_speed_120m: [], wind_direction_10m: [], wind_direction_120m: [], wind_gusts_10m: [] };
+  for (let i = 0; i < 72; i++) {
+    const hr = i % 24, d = Math.sin((hr - 9) / 24 * 2 * Math.PI);
+    const front = Math.exp(-((i - 40) ** 2) / 30);          // a passing front tomorrow afternoon
+    const w = 2.5 + 2.5 * Math.max(0, d) + 7 * front;
+    H.time.push(iso(base.getTime() + i * 3600e3));
+    H.temperature_2m.push(+(8 + 7 * d - 3 * front).toFixed(1));
+    H.dew_point_2m.push(+(5 + 2 * front - (hr > 11 && hr < 17 ? 2 : 0)).toFixed(1));
+    H.relative_humidity_2m.push(Math.round(70 + 25 * front - 15 * Math.max(0, d)));
+    H.precipitation.push(+(front > .5 ? 1.2 * front : 0).toFixed(1));
+    H.precipitation_probability.push(Math.round(80 * front));
+    H.weather_code.push(front > .5 ? 61 : (hr < 7 && i < 24 ? 45 : 2));
+    H.cloud_cover_low.push(Math.round(20 + 70 * front + (hr < 7 && i < 24 ? 60 : 0)));
+    H.visibility.push(hr < 7 && i < 24 ? 800 : 15000 - 9000 * front);
+    H.wind_speed_10m.push(+w.toFixed(1)); H.wind_speed_120m.push(+(w * 1.35).toFixed(1));
+    H.wind_direction_10m.push(Math.round(230 + 40 * front)); H.wind_direction_120m.push(Math.round(245 + 40 * front));
+    H.wind_gusts_10m.push(+(w * 1.6 + 1).toFixed(1));
+  }
+  const days = [0, 1, 2].map(k => iso(base.getTime() + k * 864e5).slice(0, 10));
+  return { utc_offset_seconds: off, hourly: H,
+    daily: { time: days, sunrise: days.map(d => d + 'T07:05'), sunset: days.map(d => d + 'T17:05') } };
+}
+
+/* ---- location UI ---- */
+$('#searchForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = $('#q').value.trim(); if (!q) return;
+  const ul = $('#results');
+  setStatus('Searching…');
+  try {
+    const r = await geocode(q);
+    const list = r.results || [];
+    setStatus(list.length ? '' : `No places found for “${q}”.`);
+    ul.innerHTML = list.map((p, i) => `<li><button type="button" data-i="${i}">${esc(p.name)} <small>${esc([p.admin1, p.country].filter(Boolean).join(', '))}</small></button></li>`).join('');
+    ul.hidden = !list.length;
+    ul.onclick = ev => {
+      const b = ev.target.closest('button'); if (!b) return;
+      const p = list[+b.dataset.i]; ul.hidden = true; $('#q').value = p.name;
+      load({ name: p.name, lat: p.latitude, lon: p.longitude });
+    };
+  } catch (err) {
+    ul.hidden = true;
+    startDemo({ name: q, lat: 47, lon: 8 }, true);
+  }
+});
+document.addEventListener('click', e => { if (!e.target.closest('.where')) $('#results').hidden = true; });
+
+$('#geoBtn').addEventListener('click', () => {
+  if (!navigator.geolocation) return setStatus('Location isn’t available in this browser. Search for a place instead.');
+  setStatus('Finding your location…');
+  navigator.geolocation.getCurrentPosition(
+    p => load({ name: 'your location', lat: +p.coords.latitude.toFixed(3), lon: +p.coords.longitude.toFixed(3) }),
+    () => setStatus('Couldn’t get your location. Allow location access or search for a place.'),
+    { timeout: 10000, maximumAge: 600000 });
+});
+$('#demoBtn').addEventListener('click', () => startDemo(null, false));
+
+// Restore last place
+try { const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); if (saved && saved.lat != null) load(saved); } catch (e) {}
+</script>
+</body>
+</html>
